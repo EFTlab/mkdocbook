@@ -6,7 +6,7 @@
 
   <groupId>com.eftlab.mkdocbook</groupId>
   <artifactId>mkdocbook</artifactId>
-  <version>0.1</version>
+  <version>0.2</version>
 
   <name>mkdocbook</name>
   <url>http://www.eftlab.com</url>
@@ -49,6 +49,11 @@
       <groupId>org.apache.xmlgraphics</groupId>
       <artifactId>fop</artifactId>
       <version>2.6</version>
+    </dependency>
+    <dependency>
+      <groupId>xerces</groupId>
+      <artifactId>xercesImpl</artifactId>
+      <version>2.12.1</version>
     </dependency>
     <dependency>
       <groupId>commons-cli</groupId>
