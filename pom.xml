@@ -6,7 +6,7 @@
 
   <groupId>com.eftlab.mkdocbook</groupId>
   <artifactId>mkdocbook</artifactId>
-  <version>0.2</version>
+  <version>0.3</version>
 
   <name>mkdocbook</name>
   <url>http://www.eftlab.com</url>
@@ -18,6 +18,11 @@
   </properties>
 
   <dependencies>
+    <dependency>
+      <groupId>xerces</groupId>
+      <artifactId>xercesImpl</artifactId>
+      <version>2.12.1</version>
+    </dependency>
     <dependency>
       <groupId>saxon</groupId>
       <artifactId>saxon</artifactId>
@@ -42,18 +47,13 @@
     </dependency>
     <dependency>
       <groupId>org.apache.xmlgraphics</groupId>
-      <artifactId>xmlgraphics-commons</artifactId>
-      <version>2.6</version>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.xmlgraphics</groupId>
       <artifactId>fop</artifactId>
       <version>2.6</version>
     </dependency>
     <dependency>
-      <groupId>xerces</groupId>
-      <artifactId>xercesImpl</artifactId>
-      <version>2.12.1</version>
+      <groupId>org.apache.xmlgraphics</groupId>
+      <artifactId>xmlgraphics-commons</artifactId>
+      <version>2.6</version>
     </dependency>
     <dependency>
       <groupId>commons-cli</groupId>
@@ -65,18 +65,25 @@
   <build>
     <plugins>
       <plugin>
-        <artifactId>maven-assembly-plugin</artifactId>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.2.4</version>
         <configuration>
-          <archive>
-            <manifest>
+          <transformers>
+            <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
+            <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
               <mainClass>com.eftlab.mkdocbook.App</mainClass>
-            </manifest>
-          </archive>
-          <descriptorRefs>
-            <descriptorRef>jar-with-dependencies</descriptorRef>
-          </descriptorRefs>
-	  <appendAssemblyId>false</appendAssemblyId>
+            </transformer>
+          </transformers>
         </configuration>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>
