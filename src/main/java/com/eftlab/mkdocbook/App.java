@@ -5,6 +5,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.net.URL;
+import java.util.HashMap;
 
 import javax.xml.transform.Result;
 import javax.xml.transform.Source;
@@ -18,78 +19,104 @@ import javax.xml.transform.stream.StreamSource;
 
 import com.icl.saxon.TransformerFactoryImpl;
 
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.CommandLineParser;
+import org.apache.commons.cli.DefaultParser;
+import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.Options;
+import org.apache.commons.cli.ParseException;
 import org.apache.fop.apps.Fop;
 import org.apache.fop.apps.FopFactory;
 import org.apache.fop.apps.FopFactoryBuilder;
 import org.apache.fop.apps.MimeConstants;
 import org.apache.xml.resolver.CatalogManager;
 import org.xml.sax.InputSource;
-import org.xml.sax.XMLReader;
 
 public class App {
 
+  private File xslFile;
+  private File xmlFile;
+  private File outFile;
+  private HashMap<String, Object> params = new HashMap<String, Object>();
+
   public static void main(String[] args) throws Exception {
-    new App().run(args);
+    App app = new App();
+    app.parseCommandLine(args);
+    app.run();
   }
 
-  public void run(String[] args) throws Exception {
-    int offset = args.length > 0 && args[0].equals(getClass().getName()) ? 1 : 0;
+  public void parseCommandLine(String[] args) {
+    Options options = new Options();
+    options.addRequiredOption("x", "stylesheet", true, "XSL stylesheet");
+    options.addRequiredOption("i", "input", true, "input file");
+    options.addRequiredOption("o", "output", true, "output file");
+    options.addOption("p", "param", true, "XSL parameters");
 
-    if (args.length - offset != 3) {
-      System.err.println("Usage:");
-      System.err.println("  java " + getClass().getName() + " xmlFileName xsltFileName outFileName");
+    CommandLineParser parser = new DefaultParser();
+    HelpFormatter help = new HelpFormatter();
+    CommandLine line;
+
+    try {
+      line = parser.parse(options, args);
+    } catch (ParseException e) {
+      System.out.println("Error: " + e.getMessage());
+      help.printHelp("mkdocbook", options);
       System.exit(1);
+      return;
     }
 
-    File xmlFile = new File(args[offset + 0]);
-    File xslFile = new File(args[offset + 1]);
-    File outFile = new File(args[offset + 2]);
+    xslFile = new File(line.getOptionValue("stylesheet"));
+    xmlFile = new File(line.getOptionValue("input"));
+    outFile = new File(line.getOptionValue("output"));
 
-    System.out.println("XML file: " + xmlFile);
-    System.out.println("XSL file: " + xslFile);
-    System.out.println("Output file: " + outFile);
-
-    initCatalogManager();
-
-    FopFactoryBuilder fopBuilder = new FopFactoryBuilder(new File(".").toURI());
-    FopFactory fopFactory = fopBuilder.build();
-    OutputStream out = new BufferedOutputStream(new FileOutputStream(outFile));
-    Fop fop = fopFactory.newFop(MimeConstants.MIME_PDF, out);
-
-    TransformerFactory tfactory = new TransformerFactoryImpl();
-    tfactory.setURIResolver(new CatalogResolver());
-
-    Source xslSource = getInputSource(xslFile);
-    Templates templates = tfactory.newTemplates(xslSource);
-
-    Source xmlSource = getInputSource(xmlFile);
-    Result result = new SAXResult(fop.getDefaultHandler());
-
-    Transformer transformer = templates.newTransformer();
-    transformer.setParameter("base.uri", xmlFile.getParentFile().toURI());
-    transformer.setParameter("logo.path", new File(xslFile.getParentFile(), "eftlab_logo.png").toURI());
-    transformer.transform(xmlSource, result);
-    out.close();
+    for (String value : line.getOptionValues("param")) {
+      String[] parts = value.split("=", 2);
+      params.put(parts[0], parts[1]);
+    }
   }
 
-  public void initCatalogManager() {
-    URL docbookCatalog = getClass().getClassLoader().getResource("docbook/catalog.xml");
-    CatalogManager cm = CatalogManager.getStaticManager();
-    cm.setIgnoreMissingProperties(true);
-    cm.setCatalogFiles(docbookCatalog.toString());
-    cm.setVerbosity(99);
+  public void run() throws Exception {
+    // Configure the CatalogManager to use the bundled stylesheets
+    URL dbkCatalog = getClass().getClassLoader().getResource("docbook/catalog.xml");
+    CatalogManager catalogManager = CatalogManager.getStaticManager();
+    catalogManager.setIgnoreMissingProperties(true);
+    catalogManager.setCatalogFiles(dbkCatalog.toString());
+    catalogManager.setVerbosity(99);
+
+    // Create a saxon TransformerFactory using our custom resolver
+    TransformerFactory transformerFactory = new TransformerFactoryImpl();
+    transformerFactory.setURIResolver(new CatalogResolver());
+
+    // Load the stylesheet and prepare the transformer
+    Source xslSource = getInputSource(xslFile);
+    Templates templates = transformerFactory.newTemplates(xslSource);
+    Transformer transformer = templates.newTransformer();
+    for (HashMap.Entry<String, Object> entry : params.entrySet())
+      transformer.setParameter(entry.getKey(), entry.getValue());
+
+    // Create the output stream for FOP to write the PDF
+    OutputStream outStream = new BufferedOutputStream(new FileOutputStream(outFile));
+    FopFactory fopFactory = new FopFactoryBuilder(new File(".").toURI()).build();
+    Fop fop = fopFactory.newFop(MimeConstants.MIME_PDF, outStream);
+
+    // Transform the input and send the result to FOP
+    Source source = getInputSource(xmlFile);
+    Result result = new SAXResult(fop.getDefaultHandler());
+    transformer.transform(source, result);
+    outStream.close();
   }
 
   public Source getInputSource(File file) throws Exception {
+    // Create a SAXSource which uses our custom reader
     StreamSource stream = new StreamSource(file);
     InputSource input = new InputSource(stream.getSystemId());
     input.setCharacterStream(stream.getReader());
     input.setByteStream(stream.getInputStream());
-    XMLReader reader = new ResolvingXMLReader();
-    return new SAXSource(reader, input);
+    return new SAXSource(new ResolvingXMLReader(), input);
   }
 }
 
+/** A CatalogResolver which won't access the network. */
 class CatalogResolver extends org.apache.xml.resolver.tools.CatalogResolver {
   public String getResolvedEntity(String publicId, String systemId) {
     String path = super.getResolvedEntity(publicId, systemId);
@@ -117,6 +144,7 @@ class CatalogResolver extends org.apache.xml.resolver.tools.CatalogResolver {
   }
 }
 
+/** A ResolvingXMLReader which won't access the network. */
 class ResolvingXMLReader extends org.apache.xml.resolver.tools.ResolvingXMLReader {
   public InputSource resolveEntity(String publicId, String systemId) {
     InputSource source = super.resolveEntity(publicId, systemId);
