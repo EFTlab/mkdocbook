@@ -7,6 +7,8 @@ import java.io.OutputStream;
 import java.net.URL;
 import java.util.HashMap;
 
+import javax.xml.parsers.SAXParser;
+import javax.xml.parsers.SAXParserFactory;
 import javax.xml.transform.Result;
 import javax.xml.transform.Source;
 import javax.xml.transform.Templates;
@@ -31,6 +33,7 @@ import org.apache.fop.apps.FopFactoryBuilder;
 import org.apache.fop.apps.MimeConstants;
 import org.apache.xml.resolver.CatalogManager;
 import org.xml.sax.InputSource;
+import org.xml.sax.XMLReader;
 
 public class App {
 
@@ -87,8 +90,14 @@ public class App {
     TransformerFactory transformerFactory = new TransformerFactoryImpl();
     transformerFactory.setURIResolver(new CatalogResolver());
 
+    // Create a SAX Parser Factory so we can configure XInclude handling
+    SAXParserFactory parserFactory = SAXParserFactory.newInstance();
+    parserFactory.setNamespaceAware(true);
+    parserFactory.setXIncludeAware(true);
+    parserFactory.setValidating(false);
+
     // Load the stylesheet and prepare the transformer
-    Source xslSource = getInputSource(xslFile);
+    Source xslSource = getInputSource(parserFactory, xslFile);
     Templates templates = transformerFactory.newTemplates(xslSource);
     Transformer transformer = templates.newTransformer();
     for (HashMap.Entry<String, Object> entry : params.entrySet())
@@ -100,19 +109,20 @@ public class App {
     Fop fop = fopFactory.newFop(MimeConstants.MIME_PDF, outStream);
 
     // Transform the input and send the result to FOP
-    Source source = getInputSource(xmlFile);
+    Source source = getInputSource(parserFactory, xmlFile);
     Result result = new SAXResult(fop.getDefaultHandler());
     transformer.transform(source, result);
     outStream.close();
   }
 
-  public Source getInputSource(File file) throws Exception {
+  public Source getInputSource(SAXParserFactory parserFactory, File file) throws Exception {
     // Create a SAXSource which uses our custom reader
     StreamSource stream = new StreamSource(file);
     InputSource input = new InputSource(stream.getSystemId());
     input.setCharacterStream(stream.getReader());
     input.setByteStream(stream.getInputStream());
-    return new SAXSource(new ResolvingXMLReader(), input);
+    XMLReader reader = parserFactory.newSAXParser().getXMLReader();
+    return new SAXSource(new ResolvingXMLFilter(reader), input);
   }
 }
 
@@ -144,8 +154,11 @@ class CatalogResolver extends org.apache.xml.resolver.tools.CatalogResolver {
   }
 }
 
-/** A ResolvingXMLReader which won't access the network. */
-class ResolvingXMLReader extends org.apache.xml.resolver.tools.ResolvingXMLReader {
+/** A ResolvingXMLFilter which won't access the network. */
+class ResolvingXMLFilter extends org.apache.xml.resolver.tools.ResolvingXMLFilter {
+  public ResolvingXMLFilter(XMLReader parent) {
+    super(parent);
+  }
   public InputSource resolveEntity(String publicId, String systemId) {
     InputSource source = super.resolveEntity(publicId, systemId);
     if (source == null ||
